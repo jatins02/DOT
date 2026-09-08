@@ -3,3 +3,4 @@ pygame
 groq
 python-dotenv
 yt-dlp
+imageio-ffmpeg

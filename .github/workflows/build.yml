@@ -3,8 +3,11 @@ name: Build and Release Desktop App
 on:
   push:
     tags:
-      - 'v*'
+      - 'v*.*.*'
   workflow_dispatch: # Allow manual trigger
+
+permissions:
+  contents: read
 
 jobs:
   build:
@@ -14,22 +17,17 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     
-    defaults:
-      run:
-        working-directory: DOT-repo
-    
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
-      with:
-        path: DOT-repo
 
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.11' # Using a stable Python version suitable for PyInstaller
+        cache: pip
 
-    - name: Install system dependencies (Linux)
+    - name: Install system dependencies
       if: runner.os == 'Linux'
       run: |
         sudo apt-get update
@@ -41,15 +39,35 @@ jobs:
         pip install -r requirements.txt
         pip install pyinstaller
 
+    - name: Prepare bundled FFmpeg
+      run: python scripts/prepare_ffmpeg.py
+
     - name: Build with PyInstaller
       run: |
         pyinstaller --onefile --windowed --name DOT-${{ runner.os }} src/app.py
+
+    # after pyinstaller builds the application verify, that the expected file exists
+    - name: Verify build output
+      shell: bash
+      run: |
+          test -f "dist/DOT-${{ runner.os }}${{ runner.os == 'Windows' && '.exe' || ''}}"
+          test -f "ffmpeg/ffmpeg${{ runner.os == 'Windows' && '.exe' || ''}}"
+
+    - name: Prepare release package
+      shell: bash
+      run: |
+          mkdir package
+          cp "dist/DOT-${{ runner.os }}${{ runner.os == 'Windows' && '.exe' || ''}}" package/
+          cp -r ffmpeg package/
+
+    - name: Create release archive
+      run: python scripts/package_release.py "DOT-${{ runner.os }}.zip"
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
         name: DOT-${{ runner.os }}
-        path: DOT-repo/dist/DOT-${{ runner.os }}*
+        path: DOT-${{ runner.os }}.zip
 
   release:
     name: Create GitHub Release
