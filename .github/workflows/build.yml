@@ -18,14 +18,21 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     
     steps:
+    - name: Prepare portable workspace
+      if: runner.os == 'Windows'
+      shell: pwsh
+      working-directory: ${{ runner.temp }}
+      run: New-Item -ItemType Directory -Force -Path dot-build | Out-Null
+
     - name: Checkout code
       uses: actions/checkout@v4
+      with:
+        path: ${{ runner.temp }}/dot-build
 
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.11' # Using a stable Python version suitable for PyInstaller
-        cache: pip
 
     - name: Install system dependencies
       if: runner.os == 'Linux'
@@ -34,40 +41,46 @@ jobs:
         sudo apt-get install -y python3-tk
 
     - name: Install dependencies
+      working-directory: ${{ runner.temp }}/dot-build
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install pyinstaller
 
     - name: Prepare bundled FFmpeg
+      working-directory: ${{ runner.temp }}/dot-build
       run: python scripts/prepare_ffmpeg.py
 
     - name: Build with PyInstaller
+      working-directory: ${{ runner.temp }}/dot-build
       run: |
         pyinstaller --onefile --windowed --name DOT-${{ runner.os }} src/app.py
 
     # after pyinstaller builds the application verify, that the expected file exists
     - name: Verify build output
       shell: bash
+      working-directory: ${{ runner.temp }}/dot-build
       run: |
           test -f "dist/DOT-${{ runner.os }}${{ runner.os == 'Windows' && '.exe' || ''}}"
           test -f "ffmpeg/ffmpeg${{ runner.os == 'Windows' && '.exe' || ''}}"
 
     - name: Prepare release package
       shell: bash
+      working-directory: ${{ runner.temp }}/dot-build
       run: |
           mkdir package
           cp "dist/DOT-${{ runner.os }}${{ runner.os == 'Windows' && '.exe' || ''}}" package/
           cp -r ffmpeg package/
 
     - name: Create release archive
+      working-directory: ${{ runner.temp }}/dot-build
       run: python scripts/package_release.py "DOT-${{ runner.os }}.zip"
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
         name: DOT-${{ runner.os }}
-        path: DOT-${{ runner.os }}.zip
+        path: ${{ runner.temp }}/dot-build/DOT-${{ runner.os }}.zip
 
   release:
     name: Create GitHub Release
